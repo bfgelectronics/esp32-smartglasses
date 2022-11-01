@@ -1,0 +1,122 @@
+#include <WiFi.h>
+#include "file.h"
+#include "camera.h"
+#include "lapse.h"
+extern "C"
+{
+#include "mbedtls/base64.h"
+}
+
+#include <HTTPClient.h>
+const char *ssid = "hehe";
+const char *password = "test1234";
+const char *process_img_api = "https://cyberguard-api.herokuapp.com/process-image";
+char host[] = "cyberguard-api.herokuapp.com";
+
+void startCameraServer();
+
+void take_and_send_pic()
+{
+	Serial.println("Sending pic");
+
+	sensor_t *s = esp_camera_sensor_get();
+	s->set_framesize(s, FRAMESIZE_VGA);
+
+	camera_fb_t *fb = esp_camera_fb_get();
+	if (!fb)
+	{
+		ESP_LOGE(TAG, "Camera Capture Failed");
+	}
+
+	// send data to the server over wifi and encide using mbeldtls lib
+
+	// encode the image
+	size_t b64_len = 0;
+	mbedtls_base64_encode(NULL, 0, &b64_len, (const unsigned char *)fb->buf, fb->len);
+	char *b64_buf = (char *)malloc(b64_len);
+	mbedtls_base64_encode((unsigned char *)b64_buf, b64_len, &b64_len, (const unsigned char *)fb->buf, fb->len);
+	// send the image
+
+	esp_camera_fb_return(fb);
+
+	HTTPClient http;
+
+	http.begin(process_img_api);						// Specify destination for HTTP request
+	http.addHeader("Content-Type", "application/json"); // Specify content-type header
+
+	int httpResponseCode = http.POST(String("{\"image\":\"") + b64_buf + "\"}"); // Send the actual POST request
+
+	if (httpResponseCode > 0)
+	{
+
+		String response = http.getString(); // Get the response to the request
+
+		Serial.println(httpResponseCode); // Print return code
+		Serial.println(response);		  // Print request answer
+	}
+	else
+	{
+
+		Serial.print("Error on sending POST: ");
+		Serial.println(httpResponseCode);
+	}
+
+	http.end(); // Free resources
+
+	free(b64_buf);
+
+	Serial.println("Pic sent");
+}
+
+// Serial.println();
+// Serial.println("closing connection");
+
+bool button_pressed = false;
+
+void setup()
+{
+	Serial.begin(115200);
+	Serial.setDebugOutput(true);
+	Serial.println();
+	initFileSystem();
+	initCamera();
+
+	pinMode(14, INPUT_PULLUP);
+	pinMode(4, OUTPUT);
+	digitalWrite(4, LOW);
+
+	WiFi.begin(ssid, password);
+	while (WiFi.status() != WL_CONNECTED)
+	{
+		delay(500);
+		Serial.print(".");
+	}
+	Serial.println("");
+	Serial.println("WiFi connected");
+	startCameraServer();
+	Serial.print("Camera Ready! Use 'http://");
+	Serial.print(WiFi.localIP());
+	Serial.println("' to connect");
+
+	sensor_t *s = esp_camera_sensor_get();
+	s->set_framesize(s, FRAMESIZE_VGA);
+}
+
+void loop()
+{
+	// Serial.println(digitalRead(12));
+	if (!digitalRead(14) && button_pressed == false)
+	{
+		button_pressed = true;
+		take_and_send_pic();
+	}
+	else if (digitalRead(14) && button_pressed == true)
+	{
+		button_pressed = false;
+	}
+	unsigned long t = millis();
+	static unsigned long ot = 0;
+	unsigned long dt = t - ot;
+	ot = t;
+	processLapse(dt);
+}

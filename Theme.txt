@@ -1,0 +1,13 @@
+Smart wareable
+
+-> New kind of wareable that should as creative as possible
+
+
+Req:
+-> the camera should collect info abot the world around 
+->  
+
+Misc:
+-> Gestre recogn.
+-> 
+
